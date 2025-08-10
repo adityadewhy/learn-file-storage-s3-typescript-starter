@@ -33,6 +33,11 @@ export async function handlerUploadThumbnail(cfg: ApiConfig, req: BunRequest) {
 
 	const fileDataType = fileData.type;
   console.log(fileDataType)
+
+  if (fileDataType != "image/jpeg" || "image/png") {
+    throw new BadRequestError("wrong type of file selected, select either jpeg or png")
+  }
+
 	const imageData = await fileData.arrayBuffer();
   const imageDataBuffer = Buffer.from(imageData)
 
