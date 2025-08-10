@@ -4,8 +4,7 @@ import {getVideo, updateVideo} from "../db/videos";
 import type {ApiConfig} from "../config";
 import {type BunRequest} from "bun";
 import {BadRequestError, NotFoundError, UserForbiddenError} from "./errors";
-import path from "path"
-
+import path from "path";
 
 export async function handlerUploadThumbnail(cfg: ApiConfig, req: BunRequest) {
 	const {videoId} = req.params as {videoId?: string};
@@ -32,14 +31,16 @@ export async function handlerUploadThumbnail(cfg: ApiConfig, req: BunRequest) {
 	}
 
 	const fileDataType = fileData.type;
-  console.log(fileDataType)
+	console.log(fileDataType);
 
-  if (fileDataType != "image/jpeg" || "image/png") {
-    throw new BadRequestError("wrong type of file selected, select either jpeg or png")
-  }
+	if (fileDataType !== "image/jpeg" && fileDataType !== "image/png") {
+		throw new BadRequestError(
+			"wrong type of file selected, select either jpeg or png"
+		);
+	}
 
 	const imageData = await fileData.arrayBuffer();
-  const imageDataBuffer = Buffer.from(imageData)
+	const imageDataBuffer = Buffer.from(imageData);
 
 	const vidMetaData = await getVideo(cfg.db, videoId);
 
@@ -53,12 +54,15 @@ export async function handlerUploadThumbnail(cfg: ApiConfig, req: BunRequest) {
 		);
 	}
 
-  const file_extension = fileDataType.split("/")[1]
-  const assetsLocation = path.join(cfg.assetsRoot, `${videoId}.${file_extension}`)
-  await Bun.write(assetsLocation,imageDataBuffer)
+	const file_extension = fileDataType.split("/")[1];
+	const assetsLocation = path.join(
+		cfg.assetsRoot,
+		`${videoId}.${file_extension}`
+	);
+	await Bun.write(assetsLocation, imageDataBuffer);
 
-  vidMetaData.thumbnailURL = `http://localhost:${process.env.PORT}/assets/${videoId}.${file_extension}`
-  
+	vidMetaData.thumbnailURL = `http://localhost:${process.env.PORT}/assets/${videoId}.${file_extension}`;
+
 	updateVideo(cfg.db, vidMetaData);
 
 	return respondWithJSON(200, vidMetaData);
