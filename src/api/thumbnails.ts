@@ -65,8 +65,7 @@ export async function handlerUploadThumbnail(cfg: ApiConfig, req: BunRequest) {
 	await Bun.write(assetsLocation, imageDataBuffer);
 
 	vidMetaData.thumbnailURL = `http://localhost:${process.env.PORT}/assets/${fileBase64RandomUrl}.${file_extension}`;
-
-	updateVideo(cfg.db, vidMetaData);
+	await updateVideo(cfg.db, vidMetaData);
 
 	return respondWithJSON(200, vidMetaData);
 }
