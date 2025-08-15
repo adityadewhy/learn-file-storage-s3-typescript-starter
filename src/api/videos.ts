@@ -62,6 +62,38 @@ async function getVideoAspectRatio(
 	}
 }
 
+async function processVideoForFastStart(inputFilePath: string) {
+	const outputFilePath = `${inputFilePath}.processed.mp4`;
+
+	const proc = Bun.spawn({
+		cmd: [
+			"ffmpeg",
+			"-i",
+			`${inputFilePath}`,
+			"-movflags",
+			"faststart",
+			"-map_metadata",
+			"0",
+			"-codec",
+			"copy",
+			"-f",
+			"mp4",
+			outputFilePath,
+		],
+		stdout: "pipe",
+		stderr: "pipe",
+	});
+
+	const stderrText = await new Response(proc.stderr).text();
+
+	const exited = await proc.exited;
+	if (exited !== 0) {
+		throw new BadRequestError(`ffmpeg failed: ${stderrText}`);
+	}
+
+	return outputFilePath;
+}
+
 export async function handlerUploadVideo(cfg: ApiConfig, req: BunRequest) {
 	const {videoId} = req.params as {videoId?: string};
 	if (!videoId) {
@@ -111,24 +143,26 @@ export async function handlerUploadVideo(cfg: ApiConfig, req: BunRequest) {
 	await mkdir(tempUrl, {recursive: true});
 	await Bun.write(`${tempUrl}/${generatedRandomBase64url}.mp4`, videoData);
 
-	const orientation = await getVideoAspectRatio(
+	const processedVideoPath = await processVideoForFastStart(
 		`${tempUrl}/${generatedRandomBase64url}.mp4`
 	);
+
+	const orientation = await getVideoAspectRatio(`${processedVideoPath}`);
+	const s3processedFileName = path.basename(`${processedVideoPath}`);
 
 	//await S3Client.file(`${generatedRandomBase64url}.mp4`, Bun.file(`{cfg.assetsRoot}/tmp/${generatedRandomBase64url}.mp4`),"video/mp4")
 	//https://<bucket-name>.s3.<region>.amazonaws.com/<key> this is the format
 
-	const s3Key = `${orientation}/${generatedRandomBase64url}.mp4`;
+	const s3Key = `${orientation}/${s3processedFileName}`;
 	const toUpload = cfg.s3Client.file(s3Key);
 
 	try {
-		await toUpload.write(
-			Bun.file(`${tempUrl}/${generatedRandomBase64url}.mp4`)
-		);
+		await toUpload.write(Bun.file(`${processedVideoPath}`));
 		vidMetaData.videoURL = `https://${cfg.s3Bucket}.s3.${cfg.s3Region}.amazonaws.com/${s3Key}`;
 		await updateVideo(cfg.db, vidMetaData);
 	} finally {
 		await unlink(`${tempUrl}/${generatedRandomBase64url}.mp4`).catch(() => {});
+		await unlink(`${processedVideoPath}`).catch(() => {});
 	}
 
 	return respondWithJSON(200, null);
