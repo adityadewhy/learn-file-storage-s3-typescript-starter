@@ -1,6 +1,6 @@
 import {respondWithJSON} from "./json";
 import {type ApiConfig} from "../config";
-import {S3Client, type BunRequest} from "bun";
+import {type BunRequest} from "bun";
 import {BadRequestError} from "./errors";
 import {getBearerToken, validateJWT} from "../auth";
 import {validate as uuidValidate} from "uuid";
@@ -94,6 +94,7 @@ async function processVideoForFastStart(inputFilePath: string) {
 	return outputFilePath;
 }
 
+/* dont need to sign anymore, using cloudfront now
 async function generatePresignedURL(
 	cfg: ApiConfig,
 	key: string,
@@ -114,6 +115,7 @@ export async function dbVideoToSignedVideo(cfg: ApiConfig, video: Video) {
 	video.videoURL = await generatePresignedURL(cfg, video.videoURL, 3600);
 	return video;
 }
+*/
 
 export async function handlerUploadVideo(cfg: ApiConfig, req: BunRequest) {
 	const {videoId} = req.params as {videoId?: string};
@@ -178,9 +180,12 @@ export async function handlerUploadVideo(cfg: ApiConfig, req: BunRequest) {
 	const toUpload = cfg.s3Client.file(s3Key);
 
 	try {
-		await toUpload.write(Bun.file(`${processedVideoPath}`));
+		await toUpload.write(Bun.file(processedVideoPath));
 		// vidMetaData.videoURL = `https://${cfg.s3Bucket}.s3.${cfg.s3Region}.amazonaws.com/${s3Key}`; dont need it baucse we are using presigned key urls now
-		vidMetaData.videoURL = s3Key;
+		if (!cfg.s3CfDistribution) {
+			throw new Error("cf distribution not available in cfg file/env");
+		}
+		vidMetaData.videoURL = `https://${cfg.s3CfDistribution}/${s3Key}`;
 		await updateVideo(cfg.db, vidMetaData);
 	} finally {
 		await unlink(`${tempUrl}/${generatedRandomBase64url}.mp4`).catch(() => {});
