@@ -1,10 +1,10 @@
 import {respondWithJSON} from "./json";
 import {type ApiConfig} from "../config";
-import {type BunRequest} from "bun";
+import {S3Client, type BunRequest} from "bun";
 import {BadRequestError} from "./errors";
 import {getBearerToken, validateJWT} from "../auth";
 import {validate as uuidValidate} from "uuid";
-import {getVideo, updateVideo} from "../db/videos";
+import {getVideo, updateVideo, type Video} from "../db/videos";
 import {NotFoundError, UserForbiddenError} from "./errors";
 import {randomBytes} from "crypto";
 import {unlink, mkdir} from "fs/promises";
@@ -94,6 +94,27 @@ async function processVideoForFastStart(inputFilePath: string) {
 	return outputFilePath;
 }
 
+async function generatePresignedURL(
+	cfg: ApiConfig,
+	key: string,
+	expireTime: number
+) {
+	const presignedFileUrl = await cfg.s3Client.presign(key, {
+		...cfg,
+		expiresIn: expireTime, // 1 hour
+	});
+
+	return presignedFileUrl;
+}
+
+export async function dbVideoToSignedVideo(cfg: ApiConfig, video: Video) {
+	if (!video.videoURL) {
+		return video; // nothing to sign
+	}
+	video.videoURL = await generatePresignedURL(cfg, video.videoURL, 3600);
+	return video;
+}
+
 export async function handlerUploadVideo(cfg: ApiConfig, req: BunRequest) {
 	const {videoId} = req.params as {videoId?: string};
 	if (!videoId) {
@@ -116,7 +137,7 @@ export async function handlerUploadVideo(cfg: ApiConfig, req: BunRequest) {
 
 	if (vidMetaData.userID !== userID) {
 		throw new UserForbiddenError(
-			"video owner id doesnt match with loggen in user id"
+			"video owner id doesnt match with logged in user id"
 		);
 	}
 
@@ -158,7 +179,8 @@ export async function handlerUploadVideo(cfg: ApiConfig, req: BunRequest) {
 
 	try {
 		await toUpload.write(Bun.file(`${processedVideoPath}`));
-		vidMetaData.videoURL = `https://${cfg.s3Bucket}.s3.${cfg.s3Region}.amazonaws.com/${s3Key}`;
+		// vidMetaData.videoURL = `https://${cfg.s3Bucket}.s3.${cfg.s3Region}.amazonaws.com/${s3Key}`; dont need it baucse we are using presigned key urls now
+		vidMetaData.videoURL = s3Key;
 		await updateVideo(cfg.db, vidMetaData);
 	} finally {
 		await unlink(`${tempUrl}/${generatedRandomBase64url}.mp4`).catch(() => {});
